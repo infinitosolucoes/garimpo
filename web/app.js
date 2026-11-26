@@ -32,6 +32,22 @@ function stars(l) { const i = l.intel; return i.reviews ? `<div class="stars"><b
 function tagHtml(t) { return `<span class="tag ${GAP_TAGS.includes(t) ? 'gap' : CAP_TAGS.includes(t) ? 'cap' : (t === 'Fechado' || t === 'Sem contato') ? 'bad' : ''}">${esc(t)}</span>`; }
 function waLink(l, text) { return l.intel.wa ? `https://wa.me/${l.intel.wa}?text=${encodeURIComponent(text ?? l.intel.pitch)}` : ''; }
 function apiLink(l, text) { const n = l.intel.wa || l.intel.tel; return n ? `https://api.whatsapp.com/send?phone=${n}&text=${encodeURIComponent(text ?? l.intel.pitch)}` : ''; }
+function clinica360Pitch(variant, recipient, sender) {
+  const name = (recipient || '').trim();
+  const intro = sender?.trim() ? `Aqui é ${sender.trim()}, da Clínica 360°.` : 'Aqui é da Clínica 360°.';
+  const hello = `${name ? `Olá, ${name}!` : 'Olá!'} Tudo bem? ${intro}`;
+  const site = 'https://clinica360.app.br';
+  if (variant === 'acompanhamento') {
+    return `${name ? `Oi, ${name}!` : 'Oi!'} Passando pra deixar o link do teste gratuito da Clínica 360°: ${site}\n\nSe tiver alguma dúvida pra começar, pode me chamar por aqui. Um abraço!`;
+  }
+  if (variant === 'curta') {
+    return `${hello} Nosso sistema reúne agenda, prontuário eletrônico e financeiro num só lugar pra facilitar a gestão do consultório.\n\nQuer testar grátis? ${site}`;
+  }
+  return [hello,
+    'Quando a agenda fica no WhatsApp, o financeiro em planilhas e os prontuários em outro sistema, até uma tarefa simples pode tomar mais tempo do que deveria.',
+    'A gente criou a Clínica 360° para reunir agenda, prontuário eletrônico e financeiro num só lugar. Ela foi pensada tanto para médicos que atendem no próprio consultório quanto para clínicas com equipe de recepção.',
+    `Quer testar grátis e ver como funciona na sua rotina? É só acessar ${site}`].join('\n\n');
+}
 async function copyLink(key, text) {
   const l = S.leads.get(key); const u = l && apiLink(l, text); if (!u) { toast('Esse lead não tem número'); return; }
   api('PATCH', '/api/leads/' + encodeURIComponent(key), { wa_link: true });
@@ -404,6 +420,12 @@ function openLead(key) {
         <div class="split"><div><small>Oportunidade</small><b style="color:var(--gold)">${i.opp}</b></div><div><small>Capacidade</small><b style="color:var(--cyan)">${i.cap}</b></div></div>
         <div class="why">${i.why.map(w => `<div class="${w.k === 'opp' ? 'o' : 'c'}"><span>${esc(w.label)}</span><span class="b"><i style="width:${Math.min(100, w.pts * 4)}%"></i></span><em>+${w.pts}</em></div>`).join('')}</div></div>
       <div class="sec"><h5>Abordagem <span class="mono" style="letter-spacing:0">edite e mande</span></h5>
+        <select class="bsel" id="pitchModel" aria-label="Modelo de mensagem">
+          <option value="garimpo">Abordagem do Garimpo</option>
+          <option value="principal">Clínica 360° · Consultiva</option>
+          <option value="curta">Clínica 360° · Primeiro contato</option>
+          <option value="acompanhamento">Clínica 360° · Acompanhamento</option>
+        </select>
         <textarea class="pitch" id="pitch" rows="4">${esc(i.pitch)}</textarea>
         <div class="row"><button class="btn" id="copyP">Copiar texto</button>${i.wa || i.tel ? '<button class="btn" id="linkP">🔗 Copiar link api.whatsapp</button>' : ''}${i.wa ? '<button class="btn" id="sendP">Abrir no WhatsApp</button>' : ''}${(i.wa || i.tel) && S.wa?.state === 'conectado' ? '<button class="btn gold" id="sendG">📤 Enviar pelo Garimpo</button>' : ''}</div>
         ${l.wa?.out || l.wa?.in || l.wa?.link ? `<div class="wabox" style="margin-top:10px">${l.wa.link ? `🔗 link copiado ${esc(fmtTs(l.wa.link))}<br>` : ''}${l.ack ? ackLine(l.ack) : l.wa.out ? `📤 você mandou ${esc(fmtTs(l.wa.out))}<br>` : ''}${l.wa.in ? `💬 <b>respondeu ${esc(fmtTs(l.wa.in))}:</b> ${esc(l.wa.text || '')}` : ''}</div>` : ''}</div>
@@ -440,7 +462,14 @@ function openLead(key) {
     try { const out = await api('POST', '/api/wa/send', { key, text: $('#pitch').value }); S.leads.set(key, out); toast('📤 Enviado'); openLead(key); } catch (er) { toast('Erro: ' + er.message); sendG.disabled = false; sendG.textContent = '📤 Enviar pelo Garimpo'; }
   };
   const sendP = $('#sendP'); if (sendP) sendP.onclick = () => window.open(waLink(l, $('#pitch').value), '_blank', 'noopener');
-  $('#pitch').oninput = () => { const w = $('#waBtn'); if (i.wa) w.href = waLink(l, $('#pitch').value); };
+  const pitch = $('#pitch');
+  const syncWaLink = () => { if (i.wa) $('#waBtn').href = waLink(l, pitch.value); };
+  pitch.oninput = syncWaLink;
+  $('#pitchModel').onchange = e => {
+    const variant = e.target.value;
+    pitch.value = variant === 'garimpo' ? i.pitch : clinica360Pitch(variant, d.title, S.wa?.cfg?.me_name);
+    syncWaLink();
+  };
   $$('#pipesel button').forEach(b => b.onclick = async () => {
     $$('#pipesel button').forEach(x => x.classList.toggle('on', x === b)); l.pipeline = b.dataset.p;
     await api('PATCH', '/api/leads/' + encodeURIComponent(key), { pipeline: b.dataset.p });
